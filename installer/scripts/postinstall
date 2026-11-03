@@ -1,0 +1,49 @@
+
+#!/bin/bash
+set -euo pipefail
+
+APP_NAME="InGenium Mailer"
+CONSOLE_USER="$(/usr/bin/stat -f%Su /dev/console)"
+
+if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "loginwindow" ]]; then
+    exit 0
+fi
+
+USER_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | /usr/bin/awk '{print $2}')"
+
+if [[ -z "$USER_HOME" || ! -d "$USER_HOME" ]]; then
+    echo "Не удалось определить домашнюю папку пользователя."
+    exit 1
+fi
+
+SUPPORT_DIR="$USER_HOME/Library/Application Support/$APP_NAME"
+ENV_FILE="$SUPPORT_DIR/.env"
+
+# Создаём папку приложения
+/bin/mkdir -p "$SUPPORT_DIR"
+
+# Создаём .env только при первой установке
+if [[ ! -f "$ENV_FILE" ]]; then
+    /usr/bin/touch "$ENV_FILE"
+
+    /bin/cat > "$ENV_FILE" <<'EOF'
+SMTP_HOST=smtppro.zoho.com
+SMTP_PORT=465
+
+SMTP_USER=
+SMTP_PASSWORD=
+
+FROM_NAME=InGenium Life
+FROM_EMAIL=
+
+DEFAULT_COURSE_URL=https://ingenium-life.info
+DEFAULT_REVIEWS_URL=https://ingenium-life.com/reviews
+EOF
+fi
+
+# Назначаем владельца и права
+/usr/sbin/chown -R "$CONSOLE_USER" "$SUPPORT_DIR"
+/bin/chmod 700 "$SUPPORT_DIR"
+/bin/chmod 600 "$ENV_FILE"
+
+exit 0

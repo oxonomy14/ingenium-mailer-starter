@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app import config
 from app.database import initialize_database, log_email, get_recent_logs
-from app.mailer import send_html_email
+from app.mailer import send_html_email, test_smtp_connection
 from app.templates import build_training_activated_email
 from app.validators import validate_form
 
@@ -15,8 +15,8 @@ class MailerApp:
         initialize_database()
         self.root = tk.Tk()
         self.root.title(f"{config.APP_NAME} v{config.APP_VERSION}")
-        self.root.geometry("800x760")
-        self.root.minsize(700, 650)
+        self.root.geometry("850x790")
+        self.root.minsize(740, 680)
         self._build_ui()
         self._load_report_history()
 
@@ -30,7 +30,11 @@ class MailerApp:
         outer = ttk.Frame(self.root, padding=24)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text=f"InGenium Mailer v{config.APP_VERSION}", font=("Helvetica", 22, "bold")).pack(anchor="w")
+        title_row = ttk.Frame(outer)
+        title_row.pack(fill="x")
+        ttk.Label(title_row, text=f"InGenium Mailer v{config.APP_VERSION}", font=("Helvetica", 22, "bold")).pack(side="left")
+        ttk.Button(title_row, text="Настройки SMTP", command=self.open_settings).pack(side="right")
+
         ttk.Label(outer, text="Уведомление об активации тренинга", foreground="#64748b").pack(anchor="w", pady=(4, 18))
 
         form = ttk.Frame(outer)
@@ -76,6 +80,96 @@ class MailerApp:
 
         self.status = tk.StringVar(value="Готово к работе")
         ttk.Label(outer, textvariable=self.status, foreground="#475569").pack(anchor="w", pady=(10, 0))
+
+    def open_settings(self):
+        settings = config.load_settings()
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Настройки SMTP")
+        dialog.geometry("540x570")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        container = ttk.Frame(dialog, padding=22)
+        container.pack(fill="both", expand=True)
+
+        ttk.Label(container, text="Настройки почты", font=("Helvetica", 18, "bold")).pack(anchor="w")
+        ttk.Label(
+            container,
+            text="Укажите параметры SMTP. Пароль хранится в локальном файле настроек.",
+            foreground="#64748b",
+            wraplength=480
+        ).pack(anchor="w", pady=(5, 16))
+
+        fields = {}
+        rows = [
+            ("SMTP-сервер", "smtp_host", settings["smtp_host"], None),
+            ("Порт", "smtp_port", str(settings["smtp_port"]), None),
+            ("Логин SMTP", "smtp_user", settings["smtp_user"], None),
+            ("Пароль приложения", "smtp_password", settings["smtp_password"], "*"),
+            ("Имя отправителя", "from_name", settings["from_name"], None),
+            ("Email отправителя", "from_email", settings["from_email"], None),
+            ("Ссылка на обучение", "course_url", settings["course_url"], None),
+            ("Ссылка на отзывы", "reviews_url", settings["reviews_url"], None),
+        ]
+
+        form = ttk.Frame(container)
+        form.pack(fill="x")
+        for index, (label, key, value, show) in enumerate(rows):
+            ttk.Label(form, text=label).grid(row=index, column=0, sticky="w", padx=(0, 12), pady=6)
+            variable = tk.StringVar(value=value)
+            entry = ttk.Entry(form, textvariable=variable, show=show, width=38)
+            entry.grid(row=index, column=1, sticky="ew", pady=6)
+            fields[key] = variable
+        form.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            container,
+            text=f"Файл настроек: {config.ENV_PATH}",
+            foreground="#64748b",
+            wraplength=480
+        ).pack(anchor="w", pady=(12, 8))
+
+        buttons = ttk.Frame(container)
+        buttons.pack(fill="x", pady=(8, 0))
+
+        def collect():
+            values = {key: variable.get() for key, variable in fields.items()}
+            if not values["smtp_host"].strip():
+                raise ValueError("Укажите SMTP-сервер.")
+            try:
+                port = int(values["smtp_port"])
+                if not 1 <= port <= 65535:
+                    raise ValueError
+            except ValueError:
+                raise ValueError("Порт должен быть числом от 1 до 65535.")
+            values["smtp_port"] = str(port)
+            if not values["smtp_user"].strip() or not values["smtp_password"]:
+                raise ValueError("Укажите логин и пароль SMTP.")
+            if not values["from_email"].strip():
+                raise ValueError("Укажите email отправителя.")
+            return values
+
+        def save():
+            try:
+                values = collect()
+                config.save_settings(values)
+                messagebox.showinfo("Настройки сохранены", "Настройки SMTP сохранены.", parent=dialog)
+                self.status.set("Настройки SMTP сохранены")
+            except Exception as exc:
+                messagebox.showerror("Ошибка сохранения", str(exc), parent=dialog)
+
+        def test():
+            try:
+                values = collect()
+                test_smtp_connection(values)
+                messagebox.showinfo("Проверка успешна", "Подключение и авторизация SMTP прошли успешно. Письмо не отправлялось.", parent=dialog)
+            except Exception as exc:
+                messagebox.showerror("Ошибка SMTP", str(exc), parent=dialog)
+
+        ttk.Button(buttons, text="Проверить подключение", command=test).pack(side="left")
+        ttk.Button(buttons, text="Сохранить", command=save).pack(side="right")
+        ttk.Button(buttons, text="Закрыть", command=dialog.destroy).pack(side="right", padx=(0, 8))
 
     def _load_report_history(self):
         self.report.configure(state="normal")

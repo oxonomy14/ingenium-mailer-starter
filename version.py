@@ -1,3 +1,3 @@
-"""Application version. Update this file when releasing a new version."""
+"""Single source of truth for the application version."""
 
-__version__ = "0.2.0"
+__version__ = "0.4.1"
